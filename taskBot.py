@@ -96,7 +96,7 @@ def main() -> None:
     """Run the bot."""
 
     application = Application.builder().token(
-        "6427831805:AAEDbX7HuYZ1nXI_SC9-cmgkH7NQLQeY0Rk").build()
+        "TOKEN").build()
 
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
