@@ -1,6 +1,6 @@
 # Task Management Bot
 
-This is a Telegram bot that allows users to create tasks with titles and descriptions.
+This is a Telegram bot that allows users to create tasks with titles, descriptions, due date and priority. The bot, then, will store the tasks in your local mongodb database. You can retrive them if you need. Additionaly the bot will notify you every 10 minutes, if it is the due-date day for your task
 
 ## Prerequisites
 
