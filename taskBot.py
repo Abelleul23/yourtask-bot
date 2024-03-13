@@ -8,12 +8,15 @@ from telegram.ext import (
     MessageHandler,
     filters,
     Updater,
+    CallbackContext,
 )
 from pymongo import MongoClient
 from datetime import datetime, time, timezone, timedelta
 import asyncio
 import queue
 import datetime as dt
+
+import motor.motor_asyncio
 
 
 client = MongoClient('mongodb://localhost:27017/')
@@ -29,7 +32,7 @@ logging.getLogger("httpx").setLevel(logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
-TASK_TITLE, TASK_DESCRIPTION, SET_DUE_DATE = range(3)
+TASK_TITLE, TASK_DESCRIPTION, SET_DUE_DATE, SET_PRIORITY = range(4)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -108,11 +111,11 @@ async def set_due_date(update, context):
         context.user_data['due_date'] = due_date
 
         # Save the task to the database
-        await save_task(context)
+        
 
         await context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f"Task due date set to {due_date}."
+            text=f"Task due date set to {due_date}. Now chose the task priority: high, medium or low"
         )
 
     else:
@@ -121,7 +124,7 @@ async def set_due_date(update, context):
             text="Invalid due date format. Please enter the due date for the task (YYYY-MM-DD):"
         )
 
-    return ConversationHandler.END
+    return SET_PRIORITY
 
 
 async def remind_tasks(context):
@@ -143,6 +146,64 @@ async def remind_tasks(context):
 
         # Wait for some time before checking tasks again
         await asyncio.sleep(600)  # Check every minute
+
+
+async def connect_to_mongodb():
+    client = motor.motor_asyncio.AsyncIOMotorClient(
+        "mongodb://localhost:27017/")
+    db = client['task_management_bot']
+    tasks_collection = db['tasks']
+    return tasks_collection
+
+# Function to retrieve tasks from the database
+
+
+async def get_tasks(tasks_collection) -> list:
+    tasks = await tasks_collection.find().to_list(None)
+    return tasks
+
+# Command handler for retrieving tasks
+
+
+async def view_tasks(update: Update, context: CallbackContext):
+    tasks_collection = await connect_to_mongodb()
+    tasks = await get_tasks(tasks_collection)
+
+    if tasks:
+        message = "Tasks:\n"
+        for task in tasks:
+            message += f"- {task['title']}\n"
+    else:
+        message = "No tasks found."
+
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
+
+
+async def set_priority(update: Update, context: CallbackContext):
+    if update.message.text:
+        priority = update.message.text.lower()
+        if priority in ['high', 'medium', 'low']:
+            context.user_data['priority'] = priority
+
+            # Save the task to the database
+            await save_task(context)
+
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"Task priority set to {priority}."
+            )
+        else:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="Invalid priority. Please enter 'high', 'medium', or 'low':"
+            )
+    else:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Invalid input. Please try again."
+        )
+
+    return ConversationHandler.END
 
 
 def main() -> None:
@@ -167,9 +228,13 @@ def main() -> None:
             TASK_TITLE: [CommandHandler("cancel", cancel), MessageHandler(filters.TEXT, task_title)],
             TASK_DESCRIPTION: [CommandHandler("cancel", cancel), MessageHandler(filters.TEXT, task_description)],
             SET_DUE_DATE: [CommandHandler("cancel", cancel), MessageHandler(filters.TEXT, set_due_date)],
+            SET_PRIORITY: [CommandHandler("cancel", cancel), MessageHandler(filters.TEXT, set_priority)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
     )
+
+    # Add the command handler to the dispatcher
+    application.add_handler(CommandHandler("tasks", view_tasks))
 
     application.add_handler(conv_handler)
 
